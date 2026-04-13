@@ -39,6 +39,34 @@ trilium-farmer/
 
 ---
 
+## Privacy & Access Control
+
+Trilium notes often contain sensitive personal information. All note content retrieved by the MCP server is passed to Claude's context and through the Anthropic API. To limit exposure:
+
+### `#private` Label Filtering
+
+Any note carrying a `#private` label — or descended from a note that carries `#private` — is silently excluded from all tool responses. This applies to:
+
+- `list_root_notes` — `#private` notes omitted from root listing
+- `get_children` — `#private` children omitted
+- `get_note` — returns an error if the note is `#private`
+- `search_notes` — `#private` notes omitted from results
+- `create_note` / `update_note` — blocked if target parent is `#private`
+
+**How to use:** In Trilium, add the label `#private` to any note or subtree you want Claude to never see. Labels inherit through children, so tagging a root branch protects the entire subtree.
+
+**Implementation:** Before returning any note, the server calls `GET /etapi/notes/{noteId}` and checks the `attributes` array for a label named `private`. If found, the note is excluded.
+
+### Lazy MemPalace Bridging
+
+No bulk sync between Trilium and MemPalace. Instead:
+- When Claude reads a Trilium note worth remembering across sessions, it calls `mempalace_add_drawer` in the same turn.
+- When Claude saves something to MemPalace that belongs in your permanent PKM, it calls `create_note` in Trilium.
+
+Each system stays clean. The bridge is intentional, not automatic.
+
+---
+
 ## Configuration
 
 **Environment variables:**
@@ -173,6 +201,7 @@ All other errors return the raw error message. No over-engineering for a persona
 
 - Note deletion (destructive — omitted intentionally)
 - Moving notes between parents
-- Managing note attributes or relations
+- Managing note attributes or relations (beyond reading `#private`)
 - Multi-instance Trilium support
 - Note sharing or publishing
+- Bulk Trilium → MemPalace ingestion
