@@ -57,6 +57,27 @@ Any note carrying a `#private` label — or descended from a note that carries `
 
 **Implementation:** Before returning any note, the server calls `GET /etapi/notes/{noteId}` and checks the `attributes` array for a label named `private`. If found, the note is excluded.
 
+### `TRILIUM_ALLOWED_ROOTS` Allowlist
+
+An optional env var that restricts which top-level notes Claude can navigate into. When set, `list_root_notes` returns only the specified note IDs. This is a coarse root-level gate — it prevents Claude from ever seeing or traversing into excluded top-level branches.
+
+```
+TRILIUM_ALLOWED_ROOTS=noteId1,noteId2
+```
+
+**Scope:** Applies to `list_root_notes` only. `get_children` on non-root notes is not restricted by the allowlist — the assumption is that if Claude navigated to a note, it was via an allowed root. `search_notes` is also not allowlist-filtered (use `#private` on any notes you want excluded from search).
+
+**When unset:** All root notes are visible (subject to `#private` filtering).
+
+**How the two layers interact:**
+
+| Scenario | Result |
+|---|---|
+| Note in allowed root, not `#private` | Visible |
+| Note in allowed root, tagged `#private` | Hidden |
+| Note in non-allowed root | Hidden from navigation (not in `list_root_notes`) |
+| Note in non-allowed root, returned by search | Visible in search (use `#private` to also hide from search) |
+
 ### Lazy MemPalace Bridging
 
 No bulk sync between Trilium and MemPalace. Instead:
@@ -75,6 +96,7 @@ Each system stays clean. The bridge is intentional, not automatic.
 |---|---|---|
 | `TRILIUM_URL` | `http://192.168.1.102:8080` | Yes |
 | `TRILIUM_TOKEN` | `<etapi token>` | Yes |
+| `TRILIUM_ALLOWED_ROOTS` | `abc123,def456` | No — if unset, all roots visible |
 
 Generate the ETAPI token in Trilium: **Options → API tokens → Create token**.
 One token works from all machines since they all hit the same Trilium instance.
