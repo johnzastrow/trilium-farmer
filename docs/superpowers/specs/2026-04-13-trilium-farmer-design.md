@@ -55,7 +55,7 @@ Any note carrying a `#private` label — or descended from a note that carries `
 
 **How to use:** In Trilium, add the label `#private` to any note or subtree you want Claude to never see. Labels inherit through children, so tagging a root branch protects the entire subtree.
 
-**Implementation:** Before returning any note, the server calls `GET /etapi/notes/{noteId}` and checks the `attributes` array for a label named `private`. If found, the note is excluded.
+**Implementation:** Before returning any note, the server calls `GET /etapi/notes/{noteId}` and checks the `attributes` array for a label matching `TRILIUM_PRIVATE_LABEL` (default: `private`). If found, the note is excluded.
 
 ### `TRILIUM_ALLOWED_ROOTS` Allowlist
 
@@ -97,6 +97,7 @@ Each system stays clean. The bridge is intentional, not automatic.
 | `TRILIUM_URL` | `http://192.168.1.102:8080` | Yes |
 | `TRILIUM_TOKEN` | `<etapi token>` | Yes |
 | `TRILIUM_ALLOWED_ROOTS` | `abc123,def456` | No — if unset, all roots visible |
+| `TRILIUM_PRIVATE_LABEL` | `hidden` | No — defaults to `private` |
 
 Generate the ETAPI token in Trilium: **Options → API tokens → Create token**.
 One token works from all machines since they all hit the same Trilium instance.

@@ -100,24 +100,27 @@ import (
 )
 
 func TestNewClient_setsFields(t *testing.T) {
-	c := NewClient("http://localhost:8080", "test-token")
+	c := NewClient("http://localhost:8080", "test-token", "private")
 	if c.baseURL != "http://localhost:8080" {
 		t.Errorf("expected baseURL http://localhost:8080, got %s", c.baseURL)
 	}
 	if c.token != "test-token" {
 		t.Errorf("expected token test-token, got %s", c.token)
 	}
+	if c.privateLabel != "private" {
+		t.Errorf("expected privateLabel private, got %s", c.privateLabel)
+	}
 }
 
 func TestNewClient_trailingSlash(t *testing.T) {
-	c := NewClient("http://localhost:8080/", "token")
+	c := NewClient("http://localhost:8080/", "token", "private")
 	if c.baseURL != "http://localhost:8080" {
 		t.Errorf("expected trailing slash stripped, got %s", c.baseURL)
 	}
 }
 
 func TestDo_connectionRefused(t *testing.T) {
-	c := NewClient("http://localhost:19999", "token") // nothing running here
+	c := NewClient("http://localhost:19999", "token", "private") // nothing running here
 	_, err := c.do("GET", "/etapi/notes/root", nil)
 	if err == nil {
 		t.Fatal("expected error for unreachable server")
@@ -192,17 +195,20 @@ type createNoteResponse struct {
 
 // Client is an HTTP client for the Trilium ETAPI.
 type Client struct {
-	baseURL string
-	token   string
-	http    *http.Client
+	baseURL      string
+	token        string
+	privateLabel string // label name that marks notes as private (default: "private")
+	http         *http.Client
 }
 
 // NewClient creates a new Trilium ETAPI client.
-func NewClient(baseURL, token string) *Client {
+// privateLabel is the Trilium label name used to mark notes as private (e.g. "private", "hidden").
+func NewClient(baseURL, token, privateLabel string) *Client {
 	return &Client{
-		baseURL: strings.TrimRight(baseURL, "/"),
-		token:   token,
-		http:    &http.Client{Timeout: 10 * time.Second},
+		baseURL:      strings.TrimRight(baseURL, "/"),
+		token:        token,
+		privateLabel: privateLabel,
+		http:         &http.Client{Timeout: 10 * time.Second},
 	}
 }
 
@@ -290,7 +296,7 @@ func TestIsPrivate_labeled(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	c := NewClient(srv.URL, "token")
+	c := NewClient(srv.URL, "token", "private")
 	priv, err := c.isPrivate("abc")
 	if err != nil {
 		t.Fatal(err)
@@ -307,7 +313,7 @@ func TestIsPrivate_unlabeled(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	c := NewClient(srv.URL, "token")
+	c := NewClient(srv.URL, "token", "private")
 	priv, err := c.isPrivate("xyz")
 	if err != nil {
 		t.Fatal(err)
@@ -348,7 +354,7 @@ func (c *Client) isPrivate(noteID string) (bool, error) {
 		return false, err
 	}
 	for _, attr := range note.Attributes {
-		if attr.Type == "label" && attr.Name == "private" {
+		if attr.Type == "label" && attr.Name == c.privateLabel {
 			return true, nil
 		}
 	}
@@ -401,7 +407,7 @@ func TestGetChildren_filtersPrivate(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	c := NewClient(srv.URL, "token")
+	c := NewClient(srv.URL, "token", "private")
 	notes, err := c.GetChildren("parent1")
 	if err != nil {
 		t.Fatal(err)
@@ -503,7 +509,7 @@ func TestGetNote_returnsContent(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	c := NewClient(srv.URL, "token")
+	c := NewClient(srv.URL, "token", "private")
 	note, err := c.GetNote("note1")
 	if err != nil {
 		t.Fatal(err)
@@ -523,7 +529,7 @@ func TestGetNote_blocksPrivate(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	c := NewClient(srv.URL, "token")
+	c := NewClient(srv.URL, "token", "private")
 	_, err := c.GetNote("priv1")
 	if err == nil {
 		t.Fatal("expected error for private note")
@@ -628,7 +634,7 @@ func TestSearchNotes_filtersPrivate(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	c := NewClient(srv.URL, "token")
+	c := NewClient(srv.URL, "token", "private")
 	results, err := c.SearchNotes("golang")
 	if err != nil {
 		t.Fatal(err)
@@ -727,7 +733,7 @@ func TestCreateNote_success(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	c := NewClient(srv.URL, "token")
+	c := NewClient(srv.URL, "token", "private")
 	note, err := c.CreateNote("parent1", "New Note", "# New Note\n\nContent.", "markdown")
 	if err != nil {
 		t.Fatal(err)
@@ -754,7 +760,7 @@ func TestCreateNote_blocksPrivateParent(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	c := NewClient(srv.URL, "token")
+	c := NewClient(srv.URL, "token", "private")
 	_, err := c.CreateNote("priv1", "New Note", "content", "markdown")
 	if err == nil {
 		t.Fatal("expected error when creating under a private parent")
@@ -775,7 +781,7 @@ func TestUpdateNote_sendsContent(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	c := NewClient(srv.URL, "token")
+	c := NewClient(srv.URL, "token", "private")
 	if err := c.UpdateNote("note1", "Updated content."); err != nil {
 		t.Fatal(err)
 	}
@@ -905,7 +911,12 @@ func main() {
 		log.Fatal("TRILIUM_TOKEN environment variable is required")
 	}
 
-	c := NewClient(triliumURL, token)
+	privateLabel := os.Getenv("TRILIUM_PRIVATE_LABEL")
+	if privateLabel == "" {
+		privateLabel = "private"
+	}
+
+	c := NewClient(triliumURL, token, privateLabel)
 
 	// Parse optional root allowlist: TRILIUM_ALLOWED_ROOTS=noteId1,noteId2
 	var allowedRoots map[string]bool
@@ -1176,7 +1187,8 @@ Edit `~/.claude/settings.local.json`. Merge the `mcpServers` key into the existi
       "env": {
         "TRILIUM_URL": "http://192.168.1.102:8080",
         "TRILIUM_TOKEN": "<paste-token-here>",
-        "TRILIUM_ALLOWED_ROOTS": "<noteId1>,<noteId2>"
+        "TRILIUM_ALLOWED_ROOTS": "<noteId1>,<noteId2>",
+        "TRILIUM_PRIVATE_LABEL": "private"
       }
     }
   },
@@ -1221,6 +1233,7 @@ Expected: the `#private` note is absent from the results.
 - ✅ Tree navigation pattern via `list_root_notes` + `get_children` (Tasks 4, 8)
 - ✅ `#private` label filtering on all read and write operations (Tasks 3–7)
 - ✅ `TRILIUM_ALLOWED_ROOTS` allowlist filtering on `list_root_notes` (Task 8)
+- ✅ `TRILIUM_PRIVATE_LABEL` configurable label name, default `"private"` (Tasks 2, 3, 8)
 - ✅ Duplicate check instruction baked into `create_note` tool description (Task 8)
 - ✅ Three friendly error messages: unreachable, invalid token, note not found (Task 2)
 - ✅ Go binary, stdio transport, `TRILIUM_URL`/`TRILIUM_TOKEN` env vars (Tasks 1, 8, 9)
