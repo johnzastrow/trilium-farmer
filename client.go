@@ -83,16 +83,20 @@ func (c *Client) do(method, path string, body io.Reader) (*http.Response, error)
 }
 
 // checkStatus converts ETAPI HTTP error codes to friendly messages.
+// Callers are responsible for closing resp.Body on success (200/201/204).
 func (c *Client) checkStatus(resp *http.Response, noteID string) error {
 	switch resp.StatusCode {
 	case 200, 201, 204:
 		return nil
 	case 401:
+		resp.Body.Close()
 		return fmt.Errorf("TRILIUM_TOKEN is invalid or expired — generate a new one in Trilium Options → API tokens")
 	case 404:
+		resp.Body.Close()
 		return fmt.Errorf("note %s not found", noteID)
 	default:
 		body, _ := io.ReadAll(resp.Body)
+		resp.Body.Close()
 		return fmt.Errorf("ETAPI error %d: %s", resp.StatusCode, string(body))
 	}
 }
