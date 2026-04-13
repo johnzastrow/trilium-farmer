@@ -1,6 +1,9 @@
 package main
 
 import (
+	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 )
@@ -33,5 +36,39 @@ func TestDo_connectionRefused(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "cannot reach Trilium") {
 		t.Errorf("expected friendly error, got: %s", err.Error())
+	}
+}
+
+func TestIsPrivate_labeled(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprintln(w, `{"noteId":"abc","title":"Secret","type":"text","attributes":[{"type":"label","name":"private","value":""}]}`)
+	}))
+	defer srv.Close()
+
+	c := NewClient(srv.URL, "token", "private")
+	priv, err := c.isPrivate("abc")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !priv {
+		t.Error("expected note with #private label to return true")
+	}
+}
+
+func TestIsPrivate_unlabeled(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprintln(w, `{"noteId":"xyz","title":"Public","type":"text","attributes":[]}`)
+	}))
+	defer srv.Close()
+
+	c := NewClient(srv.URL, "token", "private")
+	priv, err := c.isPrivate("xyz")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if priv {
+		t.Error("expected note without #private label to return false")
 	}
 }

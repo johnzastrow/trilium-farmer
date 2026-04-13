@@ -107,5 +107,26 @@ func decodeJSON(resp *http.Response, v interface{}) error {
 	return json.NewDecoder(resp.Body).Decode(v)
 }
 
+// isPrivate returns true if the note has the configured private label.
+func (c *Client) isPrivate(noteID string) (bool, error) {
+	resp, err := c.do("GET", "/etapi/notes/"+noteID, nil)
+	if err != nil {
+		return false, err
+	}
+	if err := c.checkStatus(resp, noteID); err != nil {
+		return false, err
+	}
+	var note NoteDetail
+	if err := decodeJSON(resp, &note); err != nil {
+		return false, err
+	}
+	for _, attr := range note.Attributes {
+		if attr.Type == "label" && attr.Name == c.privateLabel {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
 // Ensure url is imported (used in SearchNotes added in a later task).
 var _ = url.QueryEscape
