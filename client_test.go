@@ -72,3 +72,32 @@ func TestIsPrivate_unlabeled(t *testing.T) {
 		t.Error("expected note without #private label to return false")
 	}
 }
+
+func TestGetChildren_filtersPrivate(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/etapi/notes/parent1/children":
+			fmt.Fprintln(w, `[{"noteId":"pub1","title":"Public Note","type":"text"},{"noteId":"priv1","title":"Secret","type":"text"}]`)
+		case "/etapi/notes/pub1":
+			fmt.Fprintln(w, `{"noteId":"pub1","title":"Public Note","type":"text","attributes":[]}`)
+		case "/etapi/notes/priv1":
+			fmt.Fprintln(w, `{"noteId":"priv1","title":"Secret","type":"text","attributes":[{"type":"label","name":"private","value":""}]}`)
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer srv.Close()
+
+	c := NewClient(srv.URL, "token", "private")
+	notes, err := c.GetChildren("parent1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(notes) != 1 {
+		t.Fatalf("expected 1 visible note (private filtered), got %d", len(notes))
+	}
+	if notes[0].NoteID != "pub1" {
+		t.Errorf("expected pub1, got %s", notes[0].NoteID)
+	}
+}

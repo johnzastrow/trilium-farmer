@@ -128,5 +128,36 @@ func (c *Client) isPrivate(noteID string) (bool, error) {
 	return false, nil
 }
 
+// GetChildren returns the visible (non-private) child notes of noteID.
+func (c *Client) GetChildren(noteID string) ([]Note, error) {
+	resp, err := c.do("GET", "/etapi/notes/"+noteID+"/children", nil)
+	if err != nil {
+		return nil, err
+	}
+	if err := c.checkStatus(resp, noteID); err != nil {
+		return nil, err
+	}
+	var notes []Note
+	if err := decodeJSON(resp, &notes); err != nil {
+		return nil, err
+	}
+	var visible []Note
+	for _, n := range notes {
+		priv, err := c.isPrivate(n.NoteID)
+		if err != nil {
+			continue // skip notes we can't check
+		}
+		if !priv {
+			visible = append(visible, n)
+		}
+	}
+	return visible, nil
+}
+
+// ListRootNotes returns the visible top-level notes (children of root).
+func (c *Client) ListRootNotes() ([]Note, error) {
+	return c.GetChildren("root")
+}
+
 // Ensure url is imported (used in SearchNotes added in a later task).
 var _ = url.QueryEscape
