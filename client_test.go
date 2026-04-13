@@ -144,3 +144,30 @@ func TestGetNote_blocksPrivate(t *testing.T) {
 		t.Errorf("expected privacy error, got: %s", err.Error())
 	}
 }
+
+func TestSearchNotes_filtersPrivate(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/etapi/notes":
+			fmt.Fprintln(w, `[{"noteId":"pub2","title":"Go Tips","type":"text"},{"noteId":"priv2","title":"Passwords","type":"text"}]`)
+		case "/etapi/notes/pub2":
+			fmt.Fprintln(w, `{"noteId":"pub2","title":"Go Tips","type":"text","attributes":[]}`)
+		case "/etapi/notes/priv2":
+			fmt.Fprintln(w, `{"noteId":"priv2","title":"Passwords","type":"text","attributes":[{"type":"label","name":"private","value":""}]}`)
+		}
+	}))
+	defer srv.Close()
+
+	c := NewClient(srv.URL, "token", "private")
+	results, err := c.SearchNotes("golang")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(results) != 1 {
+		t.Fatalf("expected 1 result (private filtered), got %d", len(results))
+	}
+	if results[0].NoteID != "pub2" {
+		t.Errorf("expected pub2, got %s", results[0].NoteID)
+	}
+}

@@ -194,5 +194,26 @@ func (c *Client) GetNote(noteID string) (*NoteDetail, error) {
 	return &note, nil
 }
 
-// Ensure url is imported (used in SearchNotes added in a later task).
-var _ = url.QueryEscape
+// SearchNotes performs a full-text search and returns up to 20 visible results.
+func (c *Client) SearchNotes(query string) ([]Note, error) {
+	resp, err := c.do("GET", "/etapi/notes?search="+url.QueryEscape(query)+"&limit=20", nil)
+	if err != nil {
+		return nil, err
+	}
+	if err := c.checkStatus(resp, ""); err != nil {
+		return nil, err
+	}
+	var notes []Note
+	if err := decodeJSON(resp, &notes); err != nil {
+		return nil, err
+	}
+	var visible []Note
+	for _, n := range notes {
+		priv, err := c.isPrivate(n.NoteID)
+		if err != nil || priv {
+			continue
+		}
+		visible = append(visible, n)
+	}
+	return visible, nil
+}
