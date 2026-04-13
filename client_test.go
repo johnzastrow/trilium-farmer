@@ -1,7 +1,9 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -142,6 +144,78 @@ func TestGetNote_blocksPrivate(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "private") {
 		t.Errorf("expected privacy error, got: %s", err.Error())
+	}
+}
+
+func TestCreateNote_success(t *testing.T) {
+	var receivedBody []byte
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/etapi/notes/parent1":
+			fmt.Fprintln(w, `{"noteId":"parent1","title":"Parent","type":"text","attributes":[]}`)
+		case "/etapi/create-note":
+			receivedBody, _ = io.ReadAll(r.Body)
+			w.WriteHeader(http.StatusCreated)
+			fmt.Fprintln(w, `{"note":{"noteId":"new1","title":"New Note","type":"markdown"}}`)
+		}
+	}))
+	defer srv.Close()
+
+	c := NewClient(srv.URL, "token", "private")
+	note, err := c.CreateNote("parent1", "New Note", "# New Note\n\nContent.", "markdown")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if note.NoteID != "new1" {
+		t.Errorf("expected noteId new1, got %s", note.NoteID)
+	}
+	var req CreateNoteRequest
+	if err := json.Unmarshal(receivedBody, &req); err != nil {
+		t.Fatal(err)
+	}
+	if req.ParentNoteID != "parent1" {
+		t.Errorf("expected parentNoteId parent1, got %s", req.ParentNoteID)
+	}
+	if req.Type != "markdown" {
+		t.Errorf("expected type markdown, got %s", req.Type)
+	}
+}
+
+func TestCreateNote_blocksPrivateParent(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprintln(w, `{"noteId":"priv1","title":"Secret","type":"text","attributes":[{"type":"label","name":"private","value":""}]}`)
+	}))
+	defer srv.Close()
+
+	c := NewClient(srv.URL, "token", "private")
+	_, err := c.CreateNote("priv1", "New Note", "content", "markdown")
+	if err == nil {
+		t.Fatal("expected error when creating under a private parent")
+	}
+}
+
+func TestUpdateNote_sendsContent(t *testing.T) {
+	var receivedContent []byte
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/etapi/notes/note1":
+			w.Header().Set("Content-Type", "application/json")
+			fmt.Fprintln(w, `{"noteId":"note1","title":"Note","type":"text","attributes":[]}`)
+		case "/etapi/notes/note1/content":
+			receivedContent, _ = io.ReadAll(r.Body)
+			w.WriteHeader(http.StatusNoContent)
+		}
+	}))
+	defer srv.Close()
+
+	c := NewClient(srv.URL, "token", "private")
+	if err := c.UpdateNote("note1", "Updated content."); err != nil {
+		t.Fatal(err)
+	}
+	if string(receivedContent) != "Updated content." {
+		t.Errorf("unexpected content sent: %q", string(receivedContent))
 	}
 }
 

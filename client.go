@@ -194,6 +194,58 @@ func (c *Client) GetNote(noteID string) (*NoteDetail, error) {
 	return &note, nil
 }
 
+// CreateNote creates a child note under parentNoteID.
+// Returns an error if the parent is marked with the configured private label.
+func (c *Client) CreateNote(parentNoteID, title, content, noteType string) (*Note, error) {
+	priv, err := c.isPrivate(parentNoteID)
+	if err != nil {
+		return nil, err
+	}
+	if priv {
+		return nil, fmt.Errorf("cannot create note under %s — parent is marked #%s", parentNoteID, c.privateLabel)
+	}
+	body := CreateNoteRequest{
+		ParentNoteID: parentNoteID,
+		Title:        title,
+		Type:         noteType,
+		Content:      content,
+	}
+	data, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	resp, err := c.do("POST", "/etapi/create-note", strings.NewReader(string(data)))
+	if err != nil {
+		return nil, err
+	}
+	if err := c.checkStatus(resp, parentNoteID); err != nil {
+		return nil, err
+	}
+	var result createNoteResponse
+	if err := decodeJSON(resp, &result); err != nil {
+		return nil, err
+	}
+	return &result.Note, nil
+}
+
+// UpdateNote overwrites the content of an existing note.
+// Returns an error if the note is marked with the configured private label.
+func (c *Client) UpdateNote(noteID, content string) error {
+	priv, err := c.isPrivate(noteID)
+	if err != nil {
+		return err
+	}
+	if priv {
+		return fmt.Errorf("cannot update note %s — it is marked #%s", noteID, c.privateLabel)
+	}
+	resp, err := c.do("PUT", "/etapi/notes/"+noteID+"/content", strings.NewReader(content))
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	return c.checkStatus(resp, noteID)
+}
+
 // SearchNotes performs a full-text search and returns up to 20 visible results.
 func (c *Client) SearchNotes(query string) ([]Note, error) {
 	resp, err := c.do("GET", "/etapi/notes?search="+url.QueryEscape(query)+"&limit=20", nil)
