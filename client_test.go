@@ -101,3 +101,46 @@ func TestGetChildren_filtersPrivate(t *testing.T) {
 		t.Errorf("expected pub1, got %s", notes[0].NoteID)
 	}
 }
+
+func TestGetNote_returnsContent(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/etapi/notes/note1":
+			w.Header().Set("Content-Type", "application/json")
+			fmt.Fprintln(w, `{"noteId":"note1","title":"My Note","type":"text","attributes":[]}`)
+		case "/etapi/notes/note1/content":
+			w.Header().Set("Content-Type", "text/plain")
+			fmt.Fprint(w, "# My Note\n\nSome content.")
+		}
+	}))
+	defer srv.Close()
+
+	c := NewClient(srv.URL, "token", "private")
+	note, err := c.GetNote("note1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if note.Title != "My Note" {
+		t.Errorf("expected title 'My Note', got '%s'", note.Title)
+	}
+	if note.Content != "# My Note\n\nSome content." {
+		t.Errorf("unexpected content: %q", note.Content)
+	}
+}
+
+func TestGetNote_blocksPrivate(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprintln(w, `{"noteId":"priv1","title":"Secret","type":"text","attributes":[{"type":"label","name":"private","value":""}]}`)
+	}))
+	defer srv.Close()
+
+	c := NewClient(srv.URL, "token", "private")
+	_, err := c.GetNote("priv1")
+	if err == nil {
+		t.Fatal("expected error for private note")
+	}
+	if !strings.Contains(err.Error(), "private") {
+		t.Errorf("expected privacy error, got: %s", err.Error())
+	}
+}

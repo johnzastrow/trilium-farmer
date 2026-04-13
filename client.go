@@ -159,5 +159,40 @@ func (c *Client) ListRootNotes() ([]Note, error) {
 	return c.GetChildren("root")
 }
 
+// GetNote returns a note's metadata and full content.
+// Returns an error if the note has the configured private label.
+func (c *Client) GetNote(noteID string) (*NoteDetail, error) {
+	resp, err := c.do("GET", "/etapi/notes/"+noteID, nil)
+	if err != nil {
+		return nil, err
+	}
+	if err := c.checkStatus(resp, noteID); err != nil {
+		return nil, err
+	}
+	var note NoteDetail
+	if err := decodeJSON(resp, &note); err != nil {
+		return nil, err
+	}
+	for _, attr := range note.Attributes {
+		if attr.Type == "label" && attr.Name == c.privateLabel {
+			return nil, fmt.Errorf("note %s is marked #%s and cannot be accessed", noteID, c.privateLabel)
+		}
+	}
+	contentResp, err := c.do("GET", "/etapi/notes/"+noteID+"/content", nil)
+	if err != nil {
+		return nil, err
+	}
+	if err := c.checkStatus(contentResp, noteID); err != nil {
+		return nil, err
+	}
+	defer contentResp.Body.Close()
+	content, err := io.ReadAll(contentResp.Body)
+	if err != nil {
+		return nil, err
+	}
+	note.Content = string(content)
+	return &note, nil
+}
+
 // Ensure url is imported (used in SearchNotes added in a later task).
 var _ = url.QueryEscape
